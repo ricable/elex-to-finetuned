@@ -25,6 +25,7 @@ except ImportError:
 
 # Import simple converter fallback
 from .simple_converter import SimpleHTMLConverter
+from .cleaner import HTMLCleaner
 
 logger = get_logger(__name__)
 
@@ -32,15 +33,18 @@ logger = get_logger(__name__)
 class DocumentConverter:
     """Document converter using IBM Docling for HTML and PDF processing."""
     
-    def __init__(self, config: DoclingConfig):
+    def __init__(self, config: DoclingConfig, disable_filtering: bool = False):
         """Initialize the document converter.
         
         Args:
             config: Docling configuration
+            disable_filtering: Whether to disable HTML content filtering
         """
         self.config = config
+        self.disable_filtering = disable_filtering
         self.converter = None
         self.simple_converter = None
+        self.html_cleaner = HTMLCleaner()
         
         if HAS_DOCLING:
             try:
@@ -51,7 +55,7 @@ class DocumentConverter:
         
         if not self.converter:
             logger.warning("Docling not available, using simple HTML converter fallback")
-            self.simple_converter = SimpleHTMLConverter(config)
+            self.simple_converter = SimpleHTMLConverter(config, disable_filtering)
             if not self.simple_converter.is_available():
                 logger.error("Simple converter also not available. Install beautifulsoup4 with: pip install beautifulsoup4")
     
@@ -96,6 +100,18 @@ class DocumentConverter:
         Returns:
             Path to converted Markdown file or None if failed
         """
+        # Check if HTML file should be skipped (simple filtering)
+        if not self.disable_filtering and file_path.lower().endswith('.html'):
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    html_content = f.read()
+                
+                if self.html_cleaner.should_skip_file(html_content):
+                    logger.info(f"Skipping file based on content filter: {os.path.basename(file_path)}")
+                    return None
+            except Exception as e:
+                logger.warning(f"Could not perform content filtering on {file_path}: {e}")
+        
         # Use Docling if available, otherwise fall back to simple converter
         if self.converter:
             return self._convert_with_docling(file_path, output_dir)

@@ -8,6 +8,7 @@ from bs4 import BeautifulSoup
 
 from ..utils.logging import get_logger
 from ..utils.config import DoclingConfig
+from .cleaner import HTMLCleaner
 
 logger = get_logger(__name__)
 
@@ -23,13 +24,16 @@ except ImportError:
 class SimpleHTMLConverter:
     """Simple HTML to Markdown converter using BeautifulSoup."""
     
-    def __init__(self, config: DoclingConfig):
+    def __init__(self, config: DoclingConfig, disable_filtering: bool = False):
         """Initialize the simple converter.
         
         Args:
             config: Docling configuration
+            disable_filtering: Whether to disable HTML content filtering
         """
         self.config = config
+        self.disable_filtering = disable_filtering
+        self.html_cleaner = HTMLCleaner()
         
         if not HAS_BS4:
             logger.error("BeautifulSoup not available. Install with: pip install beautifulsoup4")
@@ -47,6 +51,19 @@ class SimpleHTMLConverter:
         if not HAS_BS4:
             logger.error("BeautifulSoup not available")
             return None
+        
+        # Check if file should be skipped based on content
+        if not self.disable_filtering:
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    html_content = f.read()
+                
+                if self.html_cleaner.should_skip_file(html_content):
+                    logger.info(f"Skipping file based on content filter: {os.path.basename(file_path)}")
+                    return None
+            except Exception as e:
+                logger.warning(f"Could not perform content filtering on {file_path}: {e}")
+                # Continue with conversion if filtering fails
         
         try:
             input_path = Path(file_path)

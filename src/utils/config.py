@@ -93,6 +93,7 @@ class PipelineConfig:
     pattern_exclude: Optional[str] = None
     max_files: Optional[int] = None
     num_workers: int = 4
+    disable_filtering: bool = False
     
     # File patterns
     html_pattern: str = "*.html"
@@ -146,12 +147,15 @@ class MLXConfig:
     enable_chat: bool = False
     auto_optimize_m3: bool = True
     
+    # Timeout configuration
+    timeouts: TimeoutConfig = field(default_factory=TimeoutConfig)
+    
     # Hardware optimization (M3 Max specific)
     m3_max_settings: Dict[str, Any] = field(default_factory=lambda: {
         "small": {"batch_size": 1, "learning_rate": 5e-5, "num_iters": 200},
-        "medium": {"batch_size": 2, "learning_rate": 2e-5, "num_iters": 500},
-        "large": {"batch_size": 8, "learning_rate": 1e-5, "num_iters": 300},
-        "max": {"batch_size": 24, "learning_rate": 1e-5, "num_iters": 1000}
+        "medium": {"batch_size": 1, "learning_rate": 2e-5, "num_iters": 500},  # Reduced batch size for memory
+        "large": {"batch_size": 2, "learning_rate": 1e-5, "num_iters": 300},   # Reduced batch size for memory
+        "max": {"batch_size": 4, "learning_rate": 1e-5, "num_iters": 1000}     # Reduced batch size for memory
     })
 
 

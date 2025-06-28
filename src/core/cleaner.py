@@ -38,6 +38,78 @@ class HTMLCleaner:
             r'<link[^>]*rel="stylesheet"[^>]*>',
         ]
         
+        # Skip patterns for code documentation
+        self.skip_patterns = ["class", "enum", "struct", "derivedDataType", "deriveddatatype", "module", "interface"]
+        
+        # Legal content patterns to remove
+        self.legal_patterns = [
+            r"Legal\s*\|.*?(?=\n\n|\Z)",
+            r"Copyright\s*©.*?(?=\n\n|\Z)",
+            r"©.*?All rights reserved\..*?(?=\n\n|\Z)",
+            r"Disclaimer\s*The contents.*?(?=\n\n|\Z)",
+            r"This document contains proprietary.*?(?=\n\n|\Z)",
+            r"Confidential.*?(?=\n\n|\Z)",
+        ]
+        
+    def should_skip_file(self, html_content: str) -> bool:
+        """Determine if an HTML file should be skipped based on content.
+        
+        Args:
+            html_content: Raw HTML content
+            
+        Returns:
+            True if file should be skipped, False otherwise
+        """
+        try:
+            from bs4 import BeautifulSoup
+        except ImportError:
+            logger.warning("BeautifulSoup not available, cannot perform advanced HTML filtering")
+            return False
+        
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Check title for skip patterns
+        if soup.title and soup.title.string:
+            title_text = soup.title.string.strip().lower()
+            for pattern in self.skip_patterns:
+                if title_text.startswith(pattern.lower()):
+                    logger.info(f"Skipping code documentation with title: {title_text}")
+                    return True
+        
+        # Check for title anchors with skip patterns
+        title_anchors = soup.find_all('a', attrs={'name': 'TITLE'})
+        for anchor in title_anchors:
+            if anchor.get_text():
+                anchor_text = anchor.get_text().strip().lower()
+                for pattern in self.skip_patterns:
+                    if pattern.lower() in anchor_text:
+                        logger.info(f"Skipping HTML file with '{pattern}' title anchor: {anchor.get_text().strip()}")
+                        return True
+        
+        # Check meta tags with name="TITLE"
+        title_meta = soup.find('meta', attrs={'name': 'TITLE'})
+        if title_meta and title_meta.get('content'):
+            content_text = title_meta.get('content').strip().lower()
+            for pattern in self.skip_patterns:
+                if pattern.lower() in content_text:
+                    logger.info(f"Skipping HTML file with '{pattern}' meta title: {title_meta.get('content')}")
+                    return True
+        
+        return False
+    
+    def remove_legal_content(self, content: str) -> str:
+        """Remove legal disclaimers and copyright notices.
+        
+        Args:
+            content: Input content
+            
+        Returns:
+            Content with legal patterns removed
+        """
+        for pattern in self.legal_patterns:
+            content = re.sub(pattern, '', content, flags=re.IGNORECASE | re.DOTALL)
+        return content
+    
     def clean_html(self, html_content: str) -> str:
         """Clean HTML content by removing common unwanted elements.
         
@@ -67,6 +139,9 @@ class HTMLCleaner:
         
         # Remove comments
         content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+        
+        # Remove legal content
+        content = self.remove_legal_content(content)
         
         # Clean up whitespace
         content = re.sub(r'\n\s*\n\s*\n', '\n\n', content)
