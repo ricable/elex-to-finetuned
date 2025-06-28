@@ -35,6 +35,9 @@ Examples:
   # Chunk existing markdown
   flow4 chunk --input combined.md --output-dir chunks/
   
+  # Clean combined documents
+  flow4 clean --input combined_document.md --output cleaned_document.md
+  
   # Fine-tune with MLX using Augmentoolkit dataset
   flow4 finetune --dataset augmentoolkit_output/mlx_dataset.jsonl --model mlx-community/Llama-3.2-3B-Instruct-4bit
         """
@@ -92,6 +95,13 @@ Examples:
         help="Generate advanced datasets using Augmentoolkit"
     )
     add_generate_args(generate_parser)
+    
+    # Clean command
+    clean_parser = subparsers.add_parser(
+        "clean",
+        help="Clean combined documents to remove duplicates and improve formatting"
+    )
+    add_clean_args(clean_parser)
     
     # Fine-tune command
     finetune_parser = subparsers.add_parser(
@@ -169,6 +179,11 @@ def add_pipeline_args(parser: argparse.ArgumentParser) -> None:
         "--augmentoolkit-config",
         type=str,
         help="Path to Augmentoolkit YAML configuration file"
+    )
+    parser.add_argument(
+        "--disable-filtering",
+        action="store_true",
+        help="Disable HTML content filtering (process all files including code documentation)"
     )
 
 
@@ -275,6 +290,21 @@ def add_generate_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_clean_args(parser: argparse.ArgumentParser) -> None:
+    """Add clean command arguments."""
+    parser.add_argument(
+        "--input", "-i",
+        type=str,
+        required=True,
+        help="Input markdown file to clean"
+    )
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        help="Output file path (optional, defaults to input file)"
+    )
+
+
 def add_finetune_args(parser: argparse.ArgumentParser) -> None:
     """Add finetune command arguments."""
     parser.add_argument(
@@ -336,10 +366,13 @@ def handle_pipeline_command(args, config: PipelineConfig) -> int:
     
     # Update docling config
     config.docling.chunk_size = args.chunk_size
+    config.docling.max_tokens = args.chunk_size  # Fix: semantic chunking uses max_tokens
     config.docling.chunk_overlap = args.chunk_overlap
+    config.docling.overlap_tokens = args.chunk_overlap  # Fix: semantic chunking uses overlap_tokens
     config.docling.extract_tables = not args.no_tables
     config.docling.extract_figures = not args.no_figures
     config.docling.with_accelerator = not args.no_accelerator
+    config.disable_filtering = args.disable_filtering
     
     try:
         # Initialize and run pipeline
@@ -354,12 +387,23 @@ def handle_pipeline_command(args, config: PipelineConfig) -> int:
             
             # Optional Augmentoolkit generation
             if args.use_augmentoolkit:
-                print(f"\n🚀 Running Augmentoolkit dataset generation...")
+                print(f"\n" + "=" * 60)
+                print(f"🚀 STARTING AUGMENTOOLKIT DATASET GENERATION")
+                print(f"=" * 60)
                 
                 try:
                     from ..core.augmentoolkit_generator import AugmentoolkitGenerator, AugmentoolkitConfig
                     
                     if AugmentoolkitGenerator.is_available():
+                        print(f"✅ Augmentoolkit is available")
+                        print(f"📁 Input chunks: {args.output_dir}/chunks")
+                        print(f"📁 Output directory: {args.output_dir}/augmentoolkit")
+                        
+                        if args.augmentoolkit_config:
+                            print(f"📋 Using config: {args.augmentoolkit_config}")
+                        else:
+                            print(f"📋 Using default configuration")
+                        
                         # Setup Augmentoolkit config
                         atk_config = AugmentoolkitConfig()
                         generator = AugmentoolkitGenerator(atk_config)
@@ -368,23 +412,41 @@ def handle_pipeline_command(args, config: PipelineConfig) -> int:
                         chunks_dir = f"{args.output_dir}/chunks"
                         augmentoolkit_output = f"{args.output_dir}/augmentoolkit"
                         
+                        print(f"\n⏳ Running dataset generation... (this may take several minutes)")
+                        print(f"📊 Check logs above for detailed progress information")
+                        
                         result = generator.generate_dataset_sync(
                             chunks_dir=chunks_dir,
                             output_dir=augmentoolkit_output,
                             config_yaml=args.augmentoolkit_config
                         )
                         
+                        print(f"\n" + "=" * 60)
                         if result.get("generation_complete", False):
-                            print(f"✅ Augmentoolkit generation complete!")
-                            print(f"📊 QA pairs: {result.get('qa_pairs_generated', 0)}")
-                            print(f"🎯 MLX dataset ready for fine-tuning!")
+                            print(f"🎉 AUGMENTOOLKIT GENERATION COMPLETED!")
+                            print(f"📊 Statistics:")
+                            print(f"   • Chunks processed: {result.get('total_chunks_processed', 0)}")
+                            print(f"   • QA pairs generated: {result.get('qa_pairs_generated', 0)}")
+                            print(f"   • Success rate: {result.get('success_rate', 0):.1f}%")
+                            print(f"📁 Output files:")
+                            output_files = result.get('output_files', {})
+                            if 'mlx_dataset' in output_files:
+                                print(f"   • MLX dataset: {output_files['mlx_dataset']}")
+                            if 'original_dataset' in output_files:
+                                print(f"   • Original dataset: {output_files['original_dataset']}")
+                            print(f"🎯 Dataset is ready for MLX fine-tuning!")
                         else:
-                            print(f"⚠️ Augmentoolkit generation failed: {result.get('error', 'Unknown error')}")
+                            print(f"❌ AUGMENTOOLKIT GENERATION FAILED")
+                            print(f"💥 Error: {result.get('error', 'Unknown error')}")
+                        print(f"=" * 60)
                     else:
-                        print(f"⚠️ Augmentoolkit not available - skipping advanced generation")
+                        print(f"⚠️ Augmentoolkit not available - MLX dependencies missing")
+                        print(f"💡 Install with: uv pip install mlx mlx-lm (Apple Silicon only)")
                         
                 except Exception as e:
-                    print(f"⚠️ Augmentoolkit generation failed: {e}")
+                    print(f"\n❌ Augmentoolkit generation failed with exception:")
+                    print(f"💥 Error: {e}")
+                    print(f"💡 Check logs above for detailed error information")
             
             return 0
         else:
@@ -452,7 +514,9 @@ def handle_chunk_command(args, config: PipelineConfig) -> int:
     
     # Update config
     config.docling.chunk_size = args.chunk_size
+    config.docling.max_tokens = args.chunk_size  # Fix: semantic chunking uses max_tokens
     config.docling.chunk_overlap = args.chunk_overlap
+    config.docling.overlap_tokens = args.chunk_overlap  # Fix: semantic chunking uses overlap_tokens
     config.docling.enable_semantic_chunking = args.semantic
     
     try:
@@ -561,6 +625,37 @@ def handle_generate_command(args, config: PipelineConfig) -> int:
         return 1
 
 
+def handle_clean_command(args, config: PipelineConfig) -> int:
+    """Handle the clean command."""
+    from ..core.document_cleaner import DocumentCleaner
+    
+    try:
+        if not Path(args.input).exists():
+            print(f"❌ Input file does not exist: {args.input}")
+            return 1
+        
+        cleaner = DocumentCleaner(config)
+        
+        print(f"🧹 Cleaning document: {args.input}")
+        
+        # Clean the document
+        output_path = cleaner.clean_document(
+            input_path=args.input,
+            output_path=args.output
+        )
+        
+        print(f"\n✅ Document cleaning complete!")
+        print(f"📄 Cleaned document: {output_path}")
+        print(f"🎯 Ready for improved chunking and dataset generation!")
+        
+        return 0
+        
+    except Exception as e:
+        logger.error(f"Document cleaning failed: {e}")
+        print(f"\n❌ Document cleaning failed: {e}")
+        return 1
+
+
 def handle_finetune_command(args, config: PipelineConfig) -> int:
     """Handle the finetune command."""
     from ..core.mlx_finetuner import MLXFineTuner
@@ -574,6 +669,9 @@ def handle_finetune_command(args, config: PipelineConfig) -> int:
     mlx_config.learning_rate = args.learning_rate
     mlx_config.fuse_model = not args.no_fuse
     
+    # Disable auto-optimization when explicit CLI parameters are provided
+    mlx_config.auto_optimize_m3 = False
+    
     try:
         finetuner = MLXFineTuner(mlx_config)
         
@@ -585,27 +683,44 @@ def handle_finetune_command(args, config: PipelineConfig) -> int:
             print(f"❌ Dataset file does not exist: {args.dataset}")
             return 1
         
-        print(f"🚀 Starting MLX fine-tuning...")
-        print(f"📊 Dataset: {args.dataset}")
-        print(f"🤖 Model: {args.model}")
-        print(f"⚙️  Iterations: {args.num_iters}")
-        print(f"🔄 Batch size: {args.batch_size}")
-        print(f"📈 Learning rate: {args.learning_rate}")
+        print(f"=" * 80)
+        print(f"🚀 STARTING MLX FINE-TUNING")
+        print(f"=" * 80)
+        print(f"📊 Fine-tuning Setup:")
+        print(f"   📁 Dataset: {args.dataset}")
+        print(f"   🤖 Model: {args.model}")
+        print(f"   ⚙️  Iterations: {args.num_iters}")
+        print(f"   🔄 Batch size: {args.batch_size}")
+        print(f"   📈 Learning rate: {args.learning_rate}")
+        print(f"   📁 Output: {args.output_dir}")
+        print(f"\n⏳ Fine-tuning in progress... (this may take a while)")
+        print(f"📊 Check logs above for detailed progress information")
         
         # Run fine-tuning
         model_path = finetuner.finetune(args.dataset, args.output_dir)
         
         if model_path:
-            print(f"\n✅ Fine-tuning complete!")
-            print(f"🤖 Model path: {model_path}")
+            print(f"\n" + "=" * 80)
+            print(f"🎉 FINE-TUNING COMPLETED SUCCESSFULLY!")
+            print(f"📁 Model location: {model_path}")
+            print(f"🎯 Model is ready for inference!")
             
             if args.chat:
-                print(f"\n🎯 Starting interactive chat...")
+                print(f"\n🗣️  Starting interactive chat session...")
+                print(f"💬 You can now test your fine-tuned model")
+                print(f"=" * 80)
                 finetuner.interactive_chat(model_path)
+            else:
+                print(f"\n💡 To test your model, run:")
+                print(f"   python src/run_flow4.py finetune --dataset {args.dataset} --chat")
+                print(f"=" * 80)
             
             return 0
         else:
-            print(f"\n❌ Fine-tuning failed")
+            print(f"\n" + "=" * 80)
+            print(f"❌ FINE-TUNING FAILED")
+            print(f"💥 Check logs above for detailed error information")
+            print(f"=" * 80)
             return 1
             
     except Exception as e:
@@ -655,6 +770,8 @@ def main() -> int:
             return handle_chunk_command(args, config)
         elif args.command == "generate":
             return handle_generate_command(args, config)
+        elif args.command == "clean":
+            return handle_clean_command(args, config)
         elif args.command == "finetune":
             return handle_finetune_command(args, config)
         else:
