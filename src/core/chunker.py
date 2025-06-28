@@ -151,17 +151,26 @@ class DocumentChunker:
         Returns:
             List of sections
         """
+        # First, deduplicate content
+        content = self._deduplicate_content(content)
+        
         sections = []
         current_section = []
         
         lines = content.split('\n')
         
         for line in lines:
+            # Skip empty lines at section boundaries
+            if not line.strip() and not current_section:
+                continue
+                
             # Check if line is a header
             if re.match(r'^#{1,6}\s+', line) and self.config.split_on_headings:
                 # Save current section if it exists
                 if current_section:
-                    sections.append('\n'.join(current_section))
+                    section_text = '\n'.join(current_section).strip()
+                    if section_text:  # Only add non-empty sections
+                        sections.append(section_text)
                     current_section = []
                 
                 # Start new section with header
@@ -172,10 +181,9 @@ class DocumentChunker:
         
         # Add final section
         if current_section:
-            sections.append('\n'.join(current_section))
-        
-        # Filter out empty sections
-        sections = [s.strip() for s in sections if s.strip()]
+            section_text = '\n'.join(current_section).strip()
+            if section_text:
+                sections.append(section_text)
         
         return sections
     
@@ -331,6 +339,9 @@ class DocumentChunker:
         Returns:
             Document chunk
         """
+        # Clean and normalize the text before creating chunk
+        text = self._clean_chunk_text(text)
+        
         chunk_id = str(uuid.uuid4())
         tokens = self.token_counter(text)
         
@@ -421,6 +432,136 @@ class DocumentChunker:
                 score += 0.2
         
         return min(score, 1.0)
+    
+    def _deduplicate_content(self, content: str) -> str:
+        """Remove duplicate consecutive lines and sections.
+        
+        Args:
+            content: Raw content with potential duplicates
+            
+        Returns:
+            Deduplicated content
+        """
+        lines = content.split('\n')
+        deduplicated_lines = []
+        seen_lines = set()
+        
+        for line in lines:
+            line_clean = line.strip()
+            # Skip empty lines or very short lines
+            if not line_clean or len(line_clean) < 3:
+                deduplicated_lines.append(line)
+                continue
+                
+            # For longer lines, check for exact duplicates
+            if line_clean not in seen_lines:
+                deduplicated_lines.append(line)
+                seen_lines.add(line_clean)
+            elif line_clean.startswith('#'):
+                # Always keep headers even if duplicated
+                deduplicated_lines.append(line)
+        
+        return '\n'.join(deduplicated_lines)
+    
+    def _clean_chunk_text(self, text: str) -> str:
+        """Clean and normalize chunk text for better quality.
+        
+        Args:
+            text: Raw chunk text
+            
+        Returns:
+            Cleaned chunk text
+        """
+        # Remove excessive whitespace
+        text = re.sub(r'\n\s*\n\s*\n+', '\n\n', text)
+        
+        # Fix broken table formatting
+        text = self._fix_table_formatting(text)
+        
+        # Remove orphaned table headers
+        text = self._remove_orphaned_headers(text)
+        
+        # Normalize whitespace
+        text = re.sub(r'[ \t]+', ' ', text)
+        
+        return text.strip()
+    
+    def _fix_table_formatting(self, text: str) -> str:
+        """Fix broken table formatting in text.
+        
+        Args:
+            text: Text with potential table fragments
+            
+        Returns:
+            Text with improved table formatting
+        """
+        lines = text.split('\n')
+        fixed_lines = []
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            
+            # Check if this looks like a table row
+            if '|' in line and line.count('|') >= 2:
+                # Look for continuation of table
+                table_lines = [line]
+                j = i + 1
+                
+                while j < len(lines) and ('|' in lines[j] or lines[j].strip() == ''):
+                    if lines[j].strip():  # Skip empty lines
+                        table_lines.append(lines[j])
+                    j += 1
+                
+                # Only keep if we have a proper table (at least 2 rows)
+                if len(table_lines) >= 2:
+                    fixed_lines.extend(table_lines)
+                else:
+                    # Convert broken table to regular text
+                    for table_line in table_lines:
+                        cleaned = table_line.replace('|', '').strip()
+                        if cleaned:
+                            fixed_lines.append(cleaned)
+                
+                i = j
+            else:
+                fixed_lines.append(line)
+                i += 1
+        
+        return '\n'.join(fixed_lines)
+    
+    def _remove_orphaned_headers(self, text: str) -> str:
+        """Remove table headers without corresponding data.
+        
+        Args:
+            text: Text with potential orphaned headers
+            
+        Returns:
+            Text with orphaned headers removed
+        """
+        lines = text.split('\n')
+        filtered_lines = []
+        
+        orphaned_headers = [
+            'Managed Object',
+            'Additional Text', 
+            'On-site Activities',
+            'Link to Remedy Actions',
+            'Feature Name',
+            'Feature Identity',
+            'Value Package Name'
+        ]
+        
+        for line in lines:
+            line_clean = line.strip()
+            
+            # Skip standalone orphaned headers
+            if line_clean in orphaned_headers:
+                continue
+                
+            filtered_lines.append(line)
+        
+        return '\n'.join(filtered_lines)
     
     def _has_code_content(self, text: str) -> bool:
         """Check if chunk contains code content.

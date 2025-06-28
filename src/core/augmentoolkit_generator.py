@@ -223,55 +223,91 @@ class AugmentoolkitGenerator:
         Returns:
             Dictionary with generation results and statistics
         """
-        logger.info("🚀 Starting Augmentoolkit dataset generation...")
+        logger.info("=" * 80)
+        logger.info("🚀 STARTING AUGMENTOOLKIT DATASET GENERATION")
+        logger.info("=" * 80)
         
         try:
             # Setup output directory
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
+            logger.info(f"📁 Output directory: {output_path}")
             
             # Load configuration if provided
             if config_yaml:
+                logger.info(f"📋 Loading configuration from: {config_yaml}")
                 yaml_config = self._load_config_from_yaml(config_yaml)
                 # Update settings from YAML
+                old_concurrency = self.config.concurrency_limit
+                old_chunk_size = self.config.chunk_size
+                
                 self.config.concurrency_limit = yaml_config.get('system', {}).get('concurrency_limit', 8)
                 self.config.chunk_size = yaml_config.get('system', {}).get('chunk_size', 3000)
                 self.config.dataset_context = yaml_config.get('dataset_context', self.config.dataset_context)
+                
+                logger.info(f"📊 Configuration Updates:")
+                logger.info(f"   🔄 Concurrency: {old_concurrency} → {self.config.concurrency_limit}")
+                logger.info(f"   📏 Chunk size: {old_chunk_size} → {self.config.chunk_size}")
+            else:
+                logger.info("📋 Using default configuration (no YAML provided)")
+            
+            logger.info(f"⚙️  Generation Configuration:")
+            logger.info(f"   🤖 Model: {self.config.model_name}")
+            logger.info(f"   🔄 Concurrency: {self.config.concurrency_limit}")
+            logger.info(f"   📏 Chunk size: {self.config.chunk_size}")
+            logger.info(f"   🎯 Context: {self.config.dataset_context}")
             
             # Setup MLX engine
+            logger.info("\n🔧 Phase 1: MLX Engine Setup")
+            logger.info("-" * 40)
             engine_wrapper = self._setup_engine()
+            logger.info("✅ MLX engine initialized successfully")
             
             # Load and prepare chunks
+            logger.info("\n📂 Phase 2: Chunk Data Preparation")
+            logger.info("-" * 40)
             chunk_texts = self._prepare_chunk_data(chunks_dir)
             
             if not chunk_texts:
+                logger.error("❌ No valid chunks found for processing")
                 raise ValueError("No valid chunks found for processing")
             
-            logger.info(f"🧩 Processing {len(chunk_texts)} chunks...")
+            logger.info(f"✅ Loaded {len(chunk_texts)} chunks for processing")
             
             # Generate QA dataset using simplified generation
-            logger.info("🔄 Running simplified QA generation...")
+            logger.info("\n🎯 Phase 3: QA Dataset Generation")
+            logger.info("-" * 40)
+            logger.info(f"🧩 Processing {len(chunk_texts)} chunks with {self.config.concurrency_limit} concurrent workers...")
             
             qa_dataset = await self._generate_qa_dataset(
                 texts=chunk_texts,
                 engine_wrapper=engine_wrapper
             )
             
-            logger.info(f"✅ Generated {len(qa_dataset)} QA pairs")
+            logger.info(f"✅ Generated {len(qa_dataset)} QA pairs from {len(chunk_texts)} chunks")
+            logger.info(f"📈 Success rate: {len(qa_dataset)/len(chunk_texts)*100:.1f}%")
             
             # Format for MLX training
+            logger.info("\n💾 Phase 4: Dataset Formatting & Export")
+            logger.info("-" * 40)
+            logger.info("🔄 Converting to MLX ChatML format...")
             mlx_file = self._format_for_mlx(qa_dataset, str(output_path))
+            logger.info(f"✅ MLX dataset saved: {mlx_file}")
             
             # Save original dataset as well
+            logger.info("💾 Saving original Augmentoolkit format...")
             original_file = output_path / "augmentoolkit_dataset.json"
             with open(original_file, 'w') as f:
                 json.dump(qa_dataset, f, indent=2)
+            logger.info(f"✅ Original dataset saved: {original_file}")
             
             # Generate summary
+            logger.info("📊 Generating execution summary...")
             summary = {
                 "generation_complete": True,
                 "total_chunks_processed": len(chunk_texts),
                 "qa_pairs_generated": len(qa_dataset),
+                "success_rate": len(qa_dataset)/len(chunk_texts)*100,
                 "output_files": {
                     "mlx_dataset": mlx_file,
                     "original_dataset": str(original_file)
@@ -292,9 +328,12 @@ class AugmentoolkitGenerator:
             summary_file = output_path / "generation_summary.json"
             with open(summary_file, 'w') as f:
                 json.dump(summary, f, indent=2)
+            logger.info(f"✅ Summary saved: {summary_file}")
             
-            logger.info("🎉 Augmentoolkit dataset generation completed successfully!")
-            logger.info(f"📊 Summary:")
+            logger.info("=" * 80)
+            logger.info("🎉 AUGMENTOOLKIT GENERATION COMPLETED SUCCESSFULLY!")
+            logger.info("=" * 80)
+            logger.info(f"📊 Final Results:")
             logger.info(f"   • Chunks processed: {len(chunk_texts)}")
             logger.info(f"   • QA pairs generated: {len(qa_dataset)}")
             logger.info(f"   • MLX dataset: {mlx_file}")

@@ -67,41 +67,77 @@ class MLXFineTuner:
         Returns:
             Path to fine-tuned model or None if failed
         """
+        logger.info("=" * 80)
+        logger.info("🚀 STARTING MLX FINE-TUNING PROCESS")
+        logger.info("=" * 80)
+        
         if not HAS_MLX:
-            logger.error("MLX not available")
+            logger.error("❌ MLX not available - cannot proceed with fine-tuning")
             return None
         
         try:
             output_path = Path(output_dir)
             output_path.mkdir(parents=True, exist_ok=True)
             
+            logger.info(f"📊 Fine-tuning Configuration:")
+            logger.info(f"   📁 Dataset: {dataset_path}")
+            logger.info(f"   📁 Output Directory: {output_dir}")
+            logger.info(f"   🤖 Model: {self.config.model_name}")
+            logger.info(f"   🔄 Batch Size: {self.config.batch_size}")
+            logger.info(f"   📈 Learning Rate: {self.config.learning_rate}")
+            logger.info(f"   ⚙️  Iterations: {self.config.num_iters}")
+            logger.info(f"   🔗 LoRA Rank: {self.config.lora_rank}")
+            logger.info(f"   📏 LoRA Alpha: {self.config.lora_alpha}")
+            logger.info(f"   🎯 Dropout: {self.config.lora_dropout}")
+            
             # Prepare dataset for MLX
+            logger.info("\n🔄 Phase 1: Dataset Preparation")
+            logger.info("-" * 40)
             formatted_dataset = self._format_dataset_for_mlx(dataset_path)
             if not formatted_dataset:
-                logger.error("Failed to format dataset for MLX")
+                logger.error("❌ Failed to format dataset for MLX")
                 return None
+            logger.info(f"✅ Dataset formatted successfully: {formatted_dataset}")
             
             # Run LoRA fine-tuning
+            logger.info("\n🎯 Phase 2: LoRA Training")
+            logger.info("-" * 40)
             adapter_path = self._run_lora_training(formatted_dataset, output_path)
             if not adapter_path:
-                logger.error("LoRA training failed")
+                logger.error("❌ LoRA training failed")
                 return None
+            logger.info(f"✅ LoRA training completed: {adapter_path}")
             
             # Fuse model if requested
             if self.config.fuse_model:
+                logger.info("\n🔗 Phase 3: Model Fusing")
+                logger.info("-" * 40)
                 fused_path = self._fuse_model(adapter_path, output_path)
                 if fused_path:
-                    logger.info(f"✅ Fine-tuned model ready: {fused_path}")
+                    logger.info("=" * 80)
+                    logger.info("🎉 FINE-TUNING COMPLETED SUCCESSFULLY!")
+                    logger.info(f"📁 Final Model: {fused_path}")
+                    logger.info("=" * 80)
                     return fused_path
                 else:
-                    logger.warning("Model fusing failed, returning adapter path")
+                    logger.warning("⚠️ Model fusing failed, returning LoRA adapter")
+                    logger.info("=" * 80)
+                    logger.info("⚠️ FINE-TUNING COMPLETED WITH WARNINGS")
+                    logger.info(f"📁 LoRA Adapter: {adapter_path}")
+                    logger.info("=" * 80)
                     return adapter_path
             
-            logger.info(f"✅ LoRA adapter ready: {adapter_path}")
+            logger.info("=" * 80)
+            logger.info("✅ FINE-TUNING COMPLETED SUCCESSFULLY!")
+            logger.info(f"📁 LoRA Adapter: {adapter_path}")
+            logger.info("=" * 80)
             return adapter_path
             
         except Exception as e:
-            logger.error(f"MLX fine-tuning failed: {e}")
+            logger.error("=" * 80)
+            logger.error("❌ FINE-TUNING FAILED")
+            logger.error(f"💥 Error: {e}")
+            logger.error("=" * 80)
             return None
     
     def _format_dataset_for_mlx(self, dataset_path: str) -> Optional[str]:
@@ -114,26 +150,32 @@ class MLXFineTuner:
             Path to formatted dataset or None if failed
         """
         try:
+            logger.info(f"📂 Loading dataset from: {dataset_path}")
+            
             # Load dataset
             with open(dataset_path, 'r', encoding='utf-8') as f:
                 if dataset_path.endswith('.jsonl'):
                     data = [json.loads(line) for line in f]
+                    logger.info(f"📊 Loaded {len(data)} examples from JSONL format")
                 else:
                     data = json.load(f)
+                    logger.info(f"📊 Loaded data from JSON format")
             
             # Format for MLX training
             formatted_data = []
+            logger.info("🔄 Converting dataset to MLX ChatML format...")
             
             if isinstance(data, dict) and 'training_data' in data:
-                # Instruction-response format
+                logger.info("📋 Detected instruction-response format")
                 for item in data['training_data']:
                     formatted_item = {
                         "text": f"<|user|>\n{item['instruction']}\n{item.get('input', '')}\n<|assistant|>\n{item['output']}"
                     }
                     formatted_data.append(formatted_item)
+                logger.info(f"✅ Converted {len(formatted_data)} instruction-response pairs")
             
             elif isinstance(data, dict) and 'conversations' in data:
-                # Conversation format
+                logger.info("💬 Detected conversation format")
                 for conv in data['conversations']:
                     if 'messages' in conv:
                         text_parts = []
@@ -144,26 +186,81 @@ class MLXFineTuner:
                         
                         formatted_item = {"text": "\n".join(text_parts)}
                         formatted_data.append(formatted_item)
+                logger.info(f"✅ Converted {len(formatted_data)} conversations")
             
             elif isinstance(data, list):
-                # JSONL format
+                logger.info("📝 Detected list format (JSONL)")
+                chatgml_count = 0
+                prompt_completion_count = 0
+                text_count = 0
+                
                 for item in data:
-                    if 'prompt' in item and 'completion' in item:
+                    if 'messages' in item:
+                        # ChatML format with messages
+                        text_parts = []
+                        for msg in item['messages']:
+                            role = msg['role']
+                            content = msg['content']
+                            if role == 'system':
+                                text_parts.append(f"<|system|>\n{content}")
+                            elif role == 'user':
+                                text_parts.append(f"<|user|>\n{content}")
+                            elif role == 'assistant':
+                                text_parts.append(f"<|assistant|>\n{content}")
+                        
+                        formatted_item = {"text": "\n".join(text_parts)}
+                        formatted_data.append(formatted_item)
+                        chatgml_count += 1
+                    elif 'prompt' in item and 'completion' in item:
                         formatted_item = {
                             "text": f"<|user|>\n{item['prompt']}\n<|assistant|>\n{item['completion']}"
                         }
                         formatted_data.append(formatted_item)
+                        prompt_completion_count += 1
                     elif 'text' in item:
                         formatted_data.append({"text": item['text']})
+                        text_count += 1
+                
+                logger.info(f"📊 Conversion summary:")
+                logger.info(f"   💬 ChatML messages: {chatgml_count}")
+                logger.info(f"   📝 Prompt-completion: {prompt_completion_count}")
+                logger.info(f"   📄 Raw text: {text_count}")
+                logger.info(f"   📋 Total examples: {len(formatted_data)}")
             
-            # Save formatted dataset
-            formatted_path = Path(dataset_path).parent / "mlx_formatted_dataset.jsonl"
-            with open(formatted_path, 'w', encoding='utf-8') as f:
-                for item in formatted_data:
+            # Create MLX dataset directory structure
+            logger.info("📁 Creating MLX dataset directory structure...")
+            dataset_dir = Path(dataset_path).parent / "mlx_dataset"
+            dataset_dir.mkdir(exist_ok=True)
+            logger.info(f"   📂 Dataset directory: {dataset_dir}")
+            
+            # Split data for train/validation (90/10 split)
+            logger.info("🔀 Splitting data into train/validation sets...")
+            split_idx = int(len(formatted_data) * 0.9)
+            train_data = formatted_data[:split_idx] if split_idx > 0 else formatted_data
+            valid_data = formatted_data[split_idx:] if split_idx < len(formatted_data) else formatted_data[:1]  # At least 1 validation example
+            
+            logger.info(f"   📊 Train examples: {len(train_data)} (90%)")
+            logger.info(f"   📊 Validation examples: {len(valid_data)} (10%)")
+            
+            # Save train.jsonl
+            logger.info("💾 Saving training dataset...")
+            train_path = dataset_dir / "train.jsonl"
+            with open(train_path, 'w', encoding='utf-8') as f:
+                for item in train_data:
                     f.write(json.dumps(item, ensure_ascii=False) + '\n')
+            logger.info(f"   ✅ Saved: {train_path}")
             
-            logger.info(f"Formatted {len(formatted_data)} examples for MLX training")
-            return str(formatted_path)
+            # Save valid.jsonl  
+            logger.info("💾 Saving validation dataset...")
+            valid_path = dataset_dir / "valid.jsonl"
+            with open(valid_path, 'w', encoding='utf-8') as f:
+                for item in valid_data:
+                    f.write(json.dumps(item, ensure_ascii=False) + '\n')
+            logger.info(f"   ✅ Saved: {valid_path}")
+            
+            logger.info(f"✅ Dataset preparation complete!")
+            logger.info(f"   📈 Ready for MLX training with {len(train_data)} training + {len(valid_data)} validation examples")
+            return str(dataset_dir)
             
         except Exception as e:
             logger.error(f"Error formatting dataset: {e}")
@@ -182,28 +279,32 @@ class MLXFineTuner:
         try:
             adapter_dir = output_dir / self.config.adapter_dir
             adapter_dir.mkdir(parents=True, exist_ok=True)
+            logger.info(f"📂 Adapter output directory: {adapter_dir}")
             
-            # Build MLX training command
+            # Build MLX training command (updated for new MLX CLI)
             cmd = [
-                "python", "-m", "mlx_lm.lora",
+                "python", "-m", "mlx_lm", "lora",
                 "--model", self.config.model_name,
                 "--train",
-                "--data", dataset_path,
+                "--data", dataset_path,  # dataset_path is now a directory containing train.jsonl and valid.jsonl
                 "--batch-size", str(self.config.batch_size),
-                "--lora-layers", str(self.config.num_layers),
-                "--lora-rank", str(self.config.lora_rank),
-                "--lora-alpha", str(self.config.lora_alpha),
-                "--lora-dropout", str(self.config.lora_dropout),
                 "--learning-rate", str(self.config.learning_rate),
                 "--iters", str(self.config.num_iters),
                 "--steps-per-eval", str(self.config.steps_per_eval),
                 "--save-every", str(self.config.steps_per_eval),
                 "--adapter-path", str(adapter_dir),
-                "--val-batches", "10"
+                "--val-batches", "2",  # Further reduced validation batches
+                "--max-seq-length", "512",  # Further reduced sequence length
+                "--grad-checkpoint"  # Enable gradient checkpointing for memory efficiency
             ]
             
-            logger.info("Starting LoRA training with MLX...")
-            logger.info(f"Command: {' '.join(cmd)}")
+            logger.info("🚀 Starting LoRA training with MLX...")
+            logger.info("📋 Training command:")
+            logger.info(f"   {' '.join(cmd)}")
+            logger.info("\n⏱️  Training in progress... (this may take a while)")
+            logger.info("   📊 You should see model loading, dataset preparation, and training progress")
+            logger.info("   📈 Training loss and validation metrics will be displayed")
+            logger.info("   💾 Model checkpoints will be saved periodically")
             
             # Run training
             result = subprocess.run(
@@ -214,12 +315,25 @@ class MLXFineTuner:
             )
             
             if result.returncode == 0:
-                logger.info("✅ LoRA training completed successfully")
+                logger.info("✅ LoRA training completed successfully!")
+                logger.info("📊 Training output:")
+                if result.stdout:
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            logger.info(f"   {line}")
                 return str(adapter_dir)
             else:
-                logger.error(f"LoRA training failed:")
-                logger.error(f"stdout: {result.stdout}")
-                logger.error(f"stderr: {result.stderr}")
+                logger.error("❌ LoRA training failed!")
+                logger.error("📊 Training stdout:")
+                if result.stdout:
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            logger.error(f"   {line}")
+                logger.error("📊 Training stderr:")
+                if result.stderr:
+                    for line in result.stderr.split('\n'):
+                        if line.strip():
+                            logger.error(f"   {line}")
                 return None
                 
         except subprocess.TimeoutExpired:

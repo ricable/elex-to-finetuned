@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from .converter import DocumentConverter
 from .chunker import DocumentChunker  
 from .cleaner import HTMLCleaner, MarkdownCleaner
+from .document_cleaner import DocumentCleaner
 from ..utils.config import PipelineConfig, create_output_structure
 from ..utils.logging import get_logger
 
@@ -35,10 +36,11 @@ class DocumentPipeline:
             config: Pipeline configuration
         """
         self.config = config or PipelineConfig()
-        self.converter = DocumentConverter(self.config.docling)
+        self.converter = DocumentConverter(self.config.docling, self.config.disable_filtering)
         self.chunker = DocumentChunker(self.config.docling)
         self.cleaner = HTMLCleaner()
         self.markdown_cleaner = MarkdownCleaner()
+        self.document_cleaner = DocumentCleaner(self.config)
         
         # Initialize optional components
         self.mlx_finetuner = None
@@ -264,34 +266,44 @@ class DocumentPipeline:
         
         print(f"[COMBINE] ✓ Raw combination complete: {len(combined_content)} characters")
         
-        # Apply comprehensive markdown cleaning for optimal chunking
-        print(f"[COMBINE] Applying comprehensive markdown cleaning...")
-        logger.info("Applying markdown cleaning for LLM optimization")
+        # Apply comprehensive document cleaning for optimal chunking
+        print(f"[COMBINE] Applying comprehensive document cleaning...")
+        logger.info("Applying document cleaning for LLM optimization")
         try:
-            with open(output_path, 'r', encoding='utf-8') as f:
-                combined_content = f.read()
+            print(f"[COMBINE] Pre-cleaning: {os.path.getsize(output_path)} bytes")
             
-            print(f"[COMBINE] Pre-cleaning: {len(combined_content)} characters")
-            
-            # Clean the combined markdown
-            cleaned_content = self.markdown_cleaner.clean_markdown_comprehensive(
-                combined_content,
-                remove_excessive_newlines=True,
-                optimize_for_llm=True
+            # Use the new document cleaner for better results
+            cleaned_path = self.document_cleaner.clean_document(
+                input_path=output_path,
+                output_path=output_path  # Clean in place
             )
             
-            print(f"[COMBINE] Post-cleaning: {len(cleaned_content)} characters")
-            
-            # Write the cleaned content back
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(cleaned_content)
-            
-            print(f"[COMBINE] ✓ Comprehensive cleaning completed")
-            logger.info("Markdown cleaning completed")
+            print(f"[COMBINE] Post-cleaning: {os.path.getsize(cleaned_path)} bytes")
+            print(f"[COMBINE] ✓ Comprehensive document cleaning completed")
+            logger.info("Document cleaning completed")
         except Exception as e:
-            print(f"[COMBINE] ✗ Error during cleaning: {e}")
-            logger.error(f"Error during markdown cleaning: {e}")
-            # Continue with uncleaned version
+            print(f"[COMBINE] ✗ Error during document cleaning: {e}")
+            logger.error(f"Error during document cleaning: {e}")
+            # Fallback to original markdown cleaner
+            try:
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    combined_content = f.read()
+                
+                cleaned_content = self.markdown_cleaner.clean_markdown_comprehensive(
+                    combined_content,
+                    remove_excessive_newlines=True,
+                    optimize_for_llm=True
+                )
+                
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(cleaned_content)
+                
+                print(f"[COMBINE] ✓ Fallback markdown cleaning completed")
+                logger.info("Fallback markdown cleaning completed")
+            except Exception as fallback_error:
+                print(f"[COMBINE] ✗ Fallback cleaning also failed: {fallback_error}")
+                logger.error(f"Fallback cleaning failed: {fallback_error}")
+                # Continue with uncleaned version
         
         print(f"[COMBINE] ✓ Clean combined document ready for chunking: {os.path.basename(output_path)}")
         logger.info(f"Combined document saved to {output_path}")
