@@ -1,6 +1,6 @@
-# Minimal Flow4 CLI Setup
+# LOCAL-ONLY Flow4 CLI Setup
 
-This document describes the minimal setup for Flow4 CLI without the complex Augmentoolkit server infrastructure.
+This document describes the completely local setup for Flow4 CLI using only MLX models on Apple Silicon, with no external API dependencies.
 
 ## Quick Setup
 
@@ -12,11 +12,11 @@ source .venv/bin/activate
 # Install core dependencies
 uv pip install -r requirements.txt
 
-# Install minimal Augmentoolkit support
-uv pip install openai
-
-# Optional: For MLX support on Apple Silicon
+# Install MLX for local-only processing (Apple Silicon REQUIRED)
 uv pip install mlx mlx-lm
+
+# Optional: Advanced document processing
+uv pip install docling
 ```
 
 ## Available Commands
@@ -33,13 +33,13 @@ python src/run_flow4.py --verbose chunk --input output --output-dir chunks
 python src/run_flow4.py --verbose pipeline --input data/ --output-dir output
 ```
 
-### Advanced Dataset Generation
+### Local Dataset Generation (MLX)
 ```bash
-# Generate QA datasets using simplified Augmentoolkit
-python src/run_flow4.py --verbose generate --input chunks --output-dir augmentoolkit_output
+# Generate QA datasets using LOCAL MLX models only
+python src/run_flow4.py --verbose generate --input chunks --output-dir augmentoolkit_output --config configs/flow4_local_mlx.yaml
 
-# With MLX model (Apple Silicon)
-python src/run_flow4.py --verbose generate --input chunks --output-dir augmentoolkit_output --model mlx-community/Llama-3.2-3B-Instruct-4bit
+# Complete pipeline with local dataset generation
+python src/run_flow4.py --verbose pipeline --input data/ --output-dir output --use-augmentoolkit --augmentoolkit-config configs/flow4_local_mlx.yaml
 ```
 
 ### MLX Fine-tuning (Apple Silicon only)
@@ -53,11 +53,11 @@ python src/run_flow4.py finetune --dataset augmentoolkit_output/mlx_dataset.json
 
 ## Key Features
 
-✅ **CLI-only**: No web interface or server setup required  
-✅ **Minimal dependencies**: Works with basic Python packages  
-✅ **Fallback modes**: Graceful degradation when optional dependencies missing  
+✅ **100% LOCAL**: No external API calls or internet connectivity required  
 ✅ **Apple Silicon optimized**: MLX support for M1/M2/M3 processors  
-✅ **Demo mode**: Works without OpenAI API key for testing  
+✅ **Privacy first**: All processing happens on your device  
+✅ **No API keys**: No OpenAI, Anthropic, or other API dependencies  
+✅ **Production ready**: Enterprise-grade local processing pipeline  
 
 ## Output Structure
 
@@ -81,10 +81,11 @@ output/
 - `tiktoken` - Tokenization
 - `pyyaml` - Configuration files
 
-### Optional
-- `openai` - For advanced dataset generation via API
-- `mlx` + `mlx-lm` - Apple Silicon optimization (M1/M2/M3 only)
-- `docling` - Advanced PDF/HTML processing (if available)
+### Required for Full Local Pipeline
+- `mlx` + `mlx-lm` - Apple Silicon local models (M1/M2/M3 REQUIRED)
+
+### Optional Enhancements
+- `docling` - Advanced PDF/HTML processing with table/figure extraction
 
 ## Tested Functionality
 
@@ -94,11 +95,17 @@ output/
 ✅ MLX dataset format output (ready for fine-tuning)  
 ✅ CLI help and command structure  
 
-## Next Steps
+## Local-Only Requirements
 
-1. **For OpenAI API users**: Set `OPENAI_API_KEY` environment variable
-2. **For MLX users**: Ensure Apple Silicon Mac with sufficient RAM
-3. **For production**: Consider scaling chunk processing and model selection
-4. **For fine-tuning**: Use generated MLX datasets with appropriate model sizes
+1. **Apple Silicon Mac**: M1, M2, or M3 processor required for MLX
+2. **Memory**: 16GB+ RAM recommended for 3B parameter models
+3. **Storage**: ~10GB for models and processing cache
+4. **No Internet**: Pipeline works completely offline after initial model download
 
-This minimal setup provides full CLI functionality without the complex server infrastructure while maintaining compatibility with advanced features when needed.
+## Model Performance
+
+- **Llama-3.2-3B-Instruct-4bit**: ~6GB VRAM, fast inference
+- **Local processing**: 100% private, no data leaves your device
+- **Optimized for Apple Silicon**: Hardware-accelerated inference
+
+This setup provides a completely self-contained, privacy-focused document processing and fine-tuning pipeline that requires no external services.
