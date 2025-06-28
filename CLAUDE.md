@@ -1,6 +1,7 @@
 # CLAUDE.md
 Always use uv for virtual env and python package management.
 Always activate the venv prior to running "flow4" cli command
+**LOCAL-ONLY PIPELINE**: All processing uses MLX models on Apple Silicon with no external API dependencies.
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
@@ -44,11 +45,11 @@ source .venv/bin/activate
 # Complete pipeline processing
 python src/run_flow4.py --verbose pipeline --input data/ --output-dir output
 
-# Advanced pipeline with Augmentoolkit dataset generation
-python src/run_flow4.py --verbose pipeline --input data/ --output-dir output --use-augmentoolkit --augmentoolkit-config src/flow4_factual_full.yaml
+# Advanced pipeline with LOCAL MLX dataset generation
+python src/run_flow4.py --verbose pipeline --input data/ --output-dir output --use-augmentoolkit --augmentoolkit-config configs/flow4_local_mlx.yaml
 
-# Advanced dataset generation only (using existing chunks)
-python src/run_flow4.py --verbose generate --input output/chunks --output-dir augmentoolkit_output --config src/flow4_factual_full.yaml
+# LOCAL dataset generation only (using existing chunks)
+python src/run_flow4.py --verbose generate --input output/chunks --output-dir augmentoolkit_output --config configs/flow4_local_mlx.yaml
 
 # Document conversion only
 python src/run_flow4.py convert --input data/ --output-dir output/markdown
@@ -67,11 +68,11 @@ uv venv
 source .venv/bin/activate
 uv pip install -r requirements.txt
 
-# For Augmentoolkit support (optional)
-uv pip install openai transformers torch pyyaml
-
-# For MLX support (Apple Silicon only)
+# For LOCAL dataset generation (Apple Silicon REQUIRED)
 uv pip install mlx mlx-lm
+
+# Optional: Enhanced document processing
+uv pip install docling
 
 # Test pipeline with sample data
 python src/run_flow4.py --verbose pipeline --input data/ --output-dir output
@@ -184,9 +185,9 @@ output/
 
 ### Dependencies and Installation
 - **Core**: `beautifulsoup4`, `lxml`, `html2text`, `tiktoken`, `pyyaml`
-- **Augmentoolkit**: `openai`, `transformers`, `torch` (optional)
-- **MLX**: `mlx`, `mlx-lm` (Apple Silicon only)
-- **Graceful Fallbacks**: System works without optional dependencies
+- **Local Processing**: `mlx`, `mlx-lm` (Apple Silicon REQUIRED for dataset generation)
+- **Enhanced Processing**: `docling` (optional, for advanced PDF/HTML processing)
+- **No External APIs**: Complete local-only operation with no internet dependencies
 
 ## Quick Reference
 
@@ -198,8 +199,8 @@ uv venv && source .venv/bin/activate && uv pip install -r requirements.txt
 # Basic Pipeline
 python src/run_flow4.py --verbose pipeline --input data/ --output-dir output
 
-# Advanced Pipeline (with Augmentoolkit)
-python src/run_flow4.py --verbose pipeline --input data/ --output-dir output --use-augmentoolkit
+# Advanced Pipeline (with LOCAL MLX)
+python src/run_flow4.py --verbose pipeline --input data/ --output-dir output --use-augmentoolkit --augmentoolkit-config configs/flow4_local_mlx.yaml
 
 # Fine-tune Model (Apple Silicon)
 python src/run_flow4.py finetune --dataset output/augmentoolkit/mlx_dataset.jsonl --chat
@@ -213,7 +214,7 @@ python src/run_flow4.py finetune --dataset output/augmentoolkit/mlx_dataset.json
 - **`finetune`**: MLX fine-tuning with LoRA adaptation (Apple Silicon)
 
 ### Key Files
-- **`configs/flow4_factual_full.yaml`**: Augmentoolkit configuration (MLX-optimized)
+- **`configs/flow4_local_mlx.yaml`**: LOCAL-ONLY MLX configuration (no external APIs)
 - **`src/run_flow4.py`**: Main CLI entry point
-- **`AUGMENTOOLKIT_SETUP.md`**: Detailed setup and usage instructions
+- **`MINIMAL_SETUP.md`**: Local-only setup instructions
 - **`.gitignore`**: Configured for ML workflows (models, outputs, cache)

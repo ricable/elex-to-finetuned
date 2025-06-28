@@ -19,38 +19,24 @@ from ..utils.logging import get_logger
 
 logger = get_logger(__name__)
 
-# Minimal Augmentoolkit implementation for CLI-only usage
+# Local-only Augmentoolkit implementation using MLX
 HAS_AUGMENTOOLKIT = False
 HAS_MLX = False
-HAS_OPENAI = False
 
-# Check for core dependencies
-try:
-    import openai
-    HAS_OPENAI = True
-except ImportError:
-    pass
-
+# Check for MLX dependency (local-only)
 try:
     import mlx.core as mx
     import mlx_lm
     HAS_MLX = True
+    HAS_AUGMENTOOLKIT = True
+    logger.info("✅ MLX available for local-only dataset generation")
 except ImportError:
-    pass
+    logger.warning("❌ MLX not available - install with: uv pip install mlx mlx-lm")
 
-# Set availability based on dependencies
-HAS_AUGMENTOOLKIT = HAS_OPENAI or HAS_MLX
-
-if HAS_AUGMENTOOLKIT:
-    logger.info("✅ Minimal Augmentoolkit implementation available")
-    if HAS_MLX:
-        logger.info("✅ MLX available for Apple Silicon optimization")
-    if HAS_OPENAI:
-        logger.info("✅ OpenAI API available for generation")
-else:
-    logger.warning("⚠️ Augmentoolkit not available. Install minimal dependencies:")
-    logger.warning("  For API mode: pip install openai")
-    logger.warning("  For MLX mode: pip install mlx mlx-lm (Apple Silicon only)")
+if not HAS_AUGMENTOOLKIT:
+    logger.warning("⚠️ Local dataset generation not available. Install MLX:")
+    logger.warning("  uv pip install mlx mlx-lm (Apple Silicon only)")
+    logger.warning("  Dataset generation will be disabled without MLX")
 
 
 @dataclass
